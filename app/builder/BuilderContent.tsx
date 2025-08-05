@@ -67,7 +67,7 @@ interface TreeNode {
 interface Algorithm {
   name: string;
   template: string;
-  tree: TreeNode;
+  tree: TreeNode[];
   description: string;
   version: string;
 }
@@ -82,7 +82,7 @@ export default function BuilderContent() {
   const [selectedTemplate, setSelectedTemplate] = useState<string>("");
   const [algorithmName, setAlgorithmName] = useState<string>("");
   const [algorithmDescription, setAlgorithmDescription] = useState<string>("");
-  const [rootNode, setRootNode] = useState<TreeNode | null>(null);
+  const [rootNodes, setRootNodes] = useState<TreeNode[]>([]);
   const [expandedParams, setExpandedParams] = useState<Set<string>>(new Set());
   const subParams = ["result", "qc", "unit", "last_value", "last_test"];
   const [draggedItem, setDraggedItem] = useState<{
@@ -115,12 +115,12 @@ export default function BuilderContent() {
     });
   };
 
-  // Initialize root node when template is selected
+  // Initialize root nodes when template is selected
   const handleTemplateChange = useCallback((templateCode: string) => {
     setSelectedTemplate(templateCode);
     if (templateCode) {
       const newRootNode: TreeNode = {
-        id: "root",
+        id: `root-${Date.now()}`,
         type: "condition",
         parameter: "",
         operator: "equals",
@@ -129,11 +129,30 @@ export default function BuilderContent() {
         resultActions: [],
         children: [],
       };
-      setRootNode(newRootNode);
+      setRootNodes([newRootNode]);
     } else {
-      setRootNode(null);
+      setRootNodes([]);
     }
   }, []);
+
+  // Add a new root-level condition
+  const addRootNode = () => {
+    if (!selectedTemplate) {
+      alert("Please select a template first.");
+      return;
+    }
+    const newRootNode: TreeNode = {
+      id: `root-${Date.now()}`,
+      type: "condition",
+      parameter: "",
+      operator: "equals",
+      value: "",
+      processActions: [],
+      resultActions: [],
+      children: [],
+    };
+    setRootNodes((prev) => [...prev, newRootNode]);
+  };
 
   // Get available parameters for the selected template
   const getAvailableParameters = useCallback(() => {
@@ -206,7 +225,7 @@ export default function BuilderContent() {
   ) => {
     e.preventDefault();
 
-    if (!draggedItem || !rootNode) return;
+    if (!draggedItem) return;
 
     const updateNode = (node: TreeNode): TreeNode => {
       if (node.id === targetNode.id) {
@@ -273,7 +292,7 @@ export default function BuilderContent() {
       };
     };
 
-    setRootNode(updateNode(rootNode));
+    setRootNodes((prev) => prev.map((node) => updateNode(node)));
     setDraggedItem(null);
   };
 
@@ -283,72 +302,83 @@ export default function BuilderContent() {
     property: keyof TreeNode,
     value: any
   ) => {
-    if (!rootNode) return;
-
-    const updateNode = (node: TreeNode): TreeNode => {
-      if (node.id === nodeId) {
-        return { ...node, [property]: value };
-      }
-      return {
-        ...node,
-        children: node.children.map((child) => updateNode(child)),
-      };
-    };
-
-    setRootNode(updateNode(rootNode));
+    setRootNodes((prev) =>
+      prev.map((node) => {
+        const updateNode = (n: TreeNode): TreeNode => {
+          if (n.id === nodeId) {
+            return { ...n, [property]: value };
+          }
+          return {
+            ...n,
+            children: n.children.map((child) => updateNode(child)),
+          };
+        };
+        return updateNode(node);
+      })
+    );
   };
 
   const addChildNode = (parentId: string) => {
-    if (!rootNode) return;
-
-    const updateNode = (node: TreeNode): TreeNode => {
-      if (node.id === parentId) {
-        if (node.resultActions.length > 0) {
-          alert(
-            "Cannot add child nodes to nodes with result actions. Result actions are terminal."
-          );
-          return node;
-        }
-        const newChild: TreeNode = {
-          id: `${parentId}-child-${node.children.length}`,
-          type: "condition",
-          parameter: "",
-          operator: "equals",
-          value: "",
-          processActions: [],
-          resultActions: [],
-          children: [],
+    setRootNodes((prev) =>
+      prev.map((node) => {
+        const updateNode = (n: TreeNode): TreeNode => {
+          if (n.id === parentId) {
+            if (n.resultActions.length > 0) {
+              alert(
+                "Cannot add child nodes to nodes with result actions. Result actions are terminal."
+              );
+              return n;
+            }
+            const newChild: TreeNode = {
+              id: `${parentId}-child-${n.children.length}`,
+              type: "condition",
+              parameter: "",
+              operator: "equals",
+              value: "",
+              processActions: [],
+              resultActions: [],
+              children: [],
+            };
+            return {
+              ...n,
+              children: [...n.children, newChild],
+            };
+          }
+          return {
+            ...n,
+            children: n.children.map((child) => updateNode(child)),
+          };
         };
-        return {
-          ...node,
-          children: [...node.children, newChild],
-        };
-      }
-      return {
-        ...node,
-        children: node.children.map((child) => updateNode(child)),
-      };
-    };
-
-    setRootNode(updateNode(rootNode));
+        return updateNode(node);
+      })
+    );
   };
 
   const removeNode = (nodeId: string) => {
-    if (!rootNode || nodeId === "root") return;
+    if (!rootNodes) return;
 
-    const removeFromChildren = (children: TreeNode[]): TreeNode[] => {
-      return children
-        .filter((child) => child.id !== nodeId)
-        .map((child) => ({
-          ...child,
-          children: removeFromChildren(child.children),
-        }));
-    };
+    if (rootNodes.some((node) => node.id === nodeId)) {
+      setRootNodes((prev) => prev.filter((node) => node.id !== nodeId));
+      return;
+    }
 
-    setRootNode({
-      ...rootNode,
-      children: removeFromChildren(rootNode.children),
-    });
+    setRootNodes((prev) =>
+      prev.map((node) => {
+        const removeFromChildren = (children: TreeNode[]): TreeNode[] => {
+          return children
+            .filter((child) => child.id !== nodeId)
+            .map((child) => ({
+              ...child,
+              children: removeFromChildren(child.children),
+            }));
+        };
+
+        return {
+          ...node,
+          children: removeFromChildren(node.children),
+        };
+      })
+    );
   };
 
   const removeAction = (
@@ -356,34 +386,35 @@ export default function BuilderContent() {
     actionType: "process" | "result",
     action: string
   ) => {
-    if (!rootNode) return;
-
-    const updateNode = (node: TreeNode): TreeNode => {
-      if (node.id === nodeId) {
-        const updatedNode = { ...node };
-        if (actionType === "process") {
-          updatedNode.processActions = updatedNode.processActions.filter(
-            (a) => a !== action
-          );
-        } else {
-          updatedNode.resultActions = updatedNode.resultActions.filter(
-            (a) => a !== action
-          );
-        }
-        return updatedNode;
-      }
-      return {
-        ...node,
-        children: node.children.map((child) => updateNode(child)),
-      };
-    };
-
-    setRootNode(updateNode(rootNode));
+    setRootNodes((prev) =>
+      prev.map((node) => {
+        const updateNode = (n: TreeNode): TreeNode => {
+          if (n.id === nodeId) {
+            const updatedNode = { ...n };
+            if (actionType === "process") {
+              updatedNode.processActions = updatedNode.processActions.filter(
+                (a) => a !== action
+              );
+            } else {
+              updatedNode.resultActions = updatedNode.resultActions.filter(
+                (a) => a !== action
+              );
+            }
+            return updatedNode;
+          }
+          return {
+            ...n,
+            children: n.children.map((child) => updateNode(child)),
+          };
+        };
+        return updateNode(node);
+      })
+    );
   };
 
   // Save algorithm
   const handleSaveAlgorithm = async () => {
-    if (!algorithmName.trim() || !selectedTemplate || !rootNode) {
+    if (!algorithmName.trim() || !selectedTemplate || rootNodes.length === 0) {
       alert(
         "Please fill in all required fields and create at least one condition."
       );
@@ -395,7 +426,7 @@ export default function BuilderContent() {
       const algorithm: Algorithm = {
         name: algorithmName,
         template: selectedTemplate,
-        tree: rootNode,
+        tree: rootNodes,
         description: algorithmDescription,
         version: "1.0",
       };
@@ -409,7 +440,7 @@ export default function BuilderContent() {
         alert("Algorithm saved successfully!");
         setAlgorithmName("");
         setAlgorithmDescription("");
-        setRootNode(null);
+        setRootNodes([]);
         setSelectedTemplate("");
       } else {
         alert("Error saving algorithm: " + result.error);
@@ -423,7 +454,7 @@ export default function BuilderContent() {
 
   // Export algorithm
   const handleExportAlgorithm = () => {
-    if (!algorithmName.trim() || !selectedTemplate || !rootNode) {
+    if (!algorithmName.trim() || !selectedTemplate || rootNodes.length === 0) {
       alert(
         "Please fill in all required fields and create at least one condition."
       );
@@ -433,7 +464,7 @@ export default function BuilderContent() {
     const algorithm: Algorithm = {
       name: algorithmName,
       template: selectedTemplate,
-      tree: rootNode,
+      tree: rootNodes,
       description: algorithmDescription,
       version: "1.0",
     };
@@ -465,7 +496,9 @@ export default function BuilderContent() {
         setAlgorithmName(algorithm.name);
         setAlgorithmDescription(algorithm.description || "");
         setSelectedTemplate(algorithm.template);
-        setRootNode(algorithm.tree);
+        setRootNodes(
+          Array.isArray(algorithm.tree) ? algorithm.tree : [algorithm.tree]
+        );
       } catch (error) {
         alert("Error parsing algorithm file");
       }
@@ -478,7 +511,7 @@ export default function BuilderContent() {
     if (confirm("Are you sure you want to clear the entire algorithm?")) {
       setAlgorithmName("");
       setAlgorithmDescription("");
-      setRootNode(null);
+      setRootNodes([]);
       setSelectedTemplate("");
       setExpandedParams(new Set());
     }
@@ -704,15 +737,13 @@ export default function BuilderContent() {
               Add Condition
             </button>
 
-            {node.id !== "root" && (
-              <button
-                onClick={() => removeNode(node.id)}
-                className="flex items-center gap-2 bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition-colors"
-              >
-                <Trash2 className="h-4 w-4" />
-                Remove
-              </button>
-            )}
+            <button
+              onClick={() => removeNode(node.id)}
+              className="flex items-center gap-2 bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition-colors"
+            >
+              <Trash2 className="h-4 w-4" />
+              Remove
+            </button>
           </div>
 
           {!isTerminal && (
@@ -939,12 +970,21 @@ export default function BuilderContent() {
             </div>
           </div>
 
-          {rootNode && (
+          {rootNodes.length > 0 && (
             <div className="bg-white/90 backdrop-blur-lg rounded-2xl p-6 shadow-xl border border-white/20 mb-8">
-              <h3 className="text-lg font-bold text-gray-900 mb-4">
-                Decision Tree
-              </h3>
-              {renderTreeNode(rootNode)}
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="text-lg font-bold text-gray-900">
+                  Decision Tree
+                </h3>
+                <button
+                  onClick={addRootNode}
+                  className="flex items-center gap-2 bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors"
+                >
+                  <Plus className="h-4 w-4" />
+                  Add Root Condition
+                </button>
+              </div>
+              {rootNodes.map((node) => renderTreeNode(node))}
             </div>
           )}
 
@@ -955,7 +995,7 @@ export default function BuilderContent() {
                 saving ||
                 !algorithmName.trim() ||
                 !selectedTemplate ||
-                !rootNode
+                rootNodes.length === 0
               }
               className="flex items-center gap-2 bg-green-600 text-white px-6 py-3 rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
@@ -969,7 +1009,11 @@ export default function BuilderContent() {
 
             <button
               onClick={handleExportAlgorithm}
-              disabled={!algorithmName.trim() || !selectedTemplate || !rootNode}
+              disabled={
+                !algorithmName.trim() ||
+                !selectedTemplate ||
+                rootNodes.length === 0
+              }
               className="flex items-center gap-2 bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <Download className="h-5 w-5" />
