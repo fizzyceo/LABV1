@@ -1,5 +1,5 @@
 import dbConnect from "../../../lib/mongodb";
-import Algorithm from "../../../models/Algorithm";
+import Action from "../../../models/Action";
 
 export default async function handler(req, res) {
   const { method } = req;
@@ -9,10 +9,10 @@ export default async function handler(req, res) {
   switch (method) {
     case "GET":
       try {
-        const algorithms = await Algorithm.find({ isActive: true }).sort({
+        const actions = await Action.find({}).sort({
           createdAt: -1,
         });
-        res.status(200).json({ success: true, data: algorithms });
+        res.status(200).json({ success: true, data: actions });
       } catch (error) {
         res.status(400).json({ success: false, error: error.message });
       }
@@ -20,8 +20,8 @@ export default async function handler(req, res) {
 
     case "POST":
       try {
-        const algorithm = await Algorithm.create(req.body);
-        res.status(201).json({ success: true, data: algorithm });
+        const action = await Action.create(req.body);
+        res.status(201).json({ success: true, data: action });
       } catch (error) {
         res.status(400).json({ success: false, error: error.message });
       }
